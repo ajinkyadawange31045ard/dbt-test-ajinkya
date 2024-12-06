@@ -1,36 +1,57 @@
 {{ config(
     materialized='incremental',
-    unique_key='productLine',
+    unique_key='productline'
 ) }}
 
--- Subquery to fetch batch metadata
-with batch_metadata as (
-    select 
-        etl_batch_no::integer as etl_batch_no, -- Ensure etl_batch_no is castable to integer
-        etl_batch_date::date as etl_batch_date -- Ensure etl_batch_date is castable to date
-    from etl_metadata.batch_control
-    order by etl_batch_date desc
-    limit 1
+WITH source_data AS (
+    SELECT
+        productline,
+        create_timestamp,
+        update_timestamp,
+        1001 AS etl_batch_no,
+        TO_DATE('2001-01-01', 'YYYY-MM-DD') AS etl_batch_date
+    FROM
+        devstage.productlines
+),
+
+existing_data AS (
+    SELECT
+        productline,
+        src_create_timestamp,
+        src_update_timestamp,
+        etl_batch_no,
+        etl_batch_date,
+        dw_update_timestamp,
+        dw_product_line_id
+    FROM
+        devdw.productlines  -- Refers to the current state of the table created by dbt
+),
+
+ranked_data AS (
+    SELECT
+        source_data.productline,
+        ROW_NUMBER() OVER (ORDER BY source_data.productline) + COALESCE(MAX(existing_data.dw_product_line_id) OVER (), 0) AS dw_product_line_id,
+        CASE
+            WHEN source_data.productline IS NOT NULL AND existing_data.productline IS NULL THEN source_data.create_timestamp
+            ELSE existing_data.src_create_timestamp
+        END AS src_create_timestamp,
+        COALESCE(source_data.update_timestamp, existing_data.src_update_timestamp) AS src_update_timestamp,
+        1001 AS etl_batch_no,
+        TO_DATE('2001-01-01', 'YYYY-MM-DD') AS etl_batch_date,
+        CASE
+            WHEN source_data.productline IS NOT NULL THEN CURRENT_TIMESTAMP
+            ELSE existing_data.dw_update_timestamp
+        END AS dw_update_timestamp,
+        CURRENT_TIMESTAMP AS dw_create_timestamp
+    FROM
+        source_data
+    LEFT JOIN existing_data ON source_data.productline = existing_data.productline
 )
 
--- Combined updated and inserted records in a single SELECT
-select
-    case
-        when dw.productLine is not null then st.productLine -- Existing record to update
-        else st.productLine -- New record to insert
-    end as productLine,
-    -- Handle updated columns
-    case
-        when dw.productLine is not null then st.update_timestamp
-        else st.create_timestamp
-    end as update_timestamp,
-    current_timestamp as dw_update_timestamp,
-    bm.etl_batch_no,
-    bm.etl_batch_date
-from {{ ref('devstage_productlines') }} as st
-left join {{ this }} as dw
-    on st.productLine = dw.productLine
-cross join batch_metadata as bm
--- Add condition to select only new or changed records for incremental load
-where dw.productLine is null -- New records
-    or st.update_timestamp > dw.update_timestamp -- Changed records
+SELECT *
+FROM ranked_data
+
+{% if is_incremental() %}
+WHERE
+    ranked_data.productline IS NOT NULL  -- Only process new or updated rows
+{% endif %}
