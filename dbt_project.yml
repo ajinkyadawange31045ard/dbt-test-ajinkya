@@ -6,7 +6,7 @@ version: '1.0.0'
 config-version: 2
 
 # This setting configures which "profile" dbt uses for this project.
-profile: 'default'
+profile: 'dbt-test-ajinkya'
 
 # These configurations specify where dbt should look for different types of files.
 # The `model-paths` config, for example, states that models in this project can be
@@ -33,7 +33,6 @@ clean-targets:         # Directories to be removed by `dbt clean`
 # using the `{{ config(...) }}` macro.
 
 models:
-  # dbt-test-ajinkya:
   codes:  # This should match the subdirectory name under the "models" folder.
     +schema: devdw  # Specify the schema where models will be created.
     +materialized: table  # Optional: Set default materialization for this folder.
