@@ -1,4 +1,5 @@
 {{ config(
+    schema='devdw',
     materialized='incremental',
     unique_key='productline'
 ) }}

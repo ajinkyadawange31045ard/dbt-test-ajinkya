@@ -17,9 +17,7 @@ clean-targets: ["target", "dbt_modules"]
 
 models:
   dbt_test_ajinkya:
-    classicmodels:  # This should match the subdirectory name under the "models" folder.
-      +schema: devdw  # Specify the schema where models will be created.
-      +materialized: table  # Optional: Set default materialization for this folder.
-    
-    +schema: devdw  # Specify the schema where models will be created.
-    +materialized: table  # Optional: Set default materialization for this folder.
+    +schema: devdw  # Forces all models to use the devdw schema
+    classicmodels:
+      +materialized: table  # Example sub-folder settings (if applicable)
+
