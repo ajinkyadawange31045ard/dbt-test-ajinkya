@@ -1,15 +1,9 @@
-{{ config(
-    materialized='incremental'
-) }}
-
 WITH batch_metadata AS (
     SELECT
         etl_batch_no,
         etl_batch_date
     FROM etl_metadata.batch_control
-   
 ),
-
 merged_data AS (
     SELECT
         s.productcode AS src_productcode,
@@ -32,7 +26,7 @@ merged_data AS (
         e.dw_product_id AS existing_dw_product_id,
         pl.dw_product_line_id AS product_line_id
     FROM
-        {{source("devstage","products")}} s
+        {{source("devstage", "products")}} s
     CROSS JOIN
         batch_metadata bm
     LEFT JOIN
@@ -44,7 +38,6 @@ merged_data AS (
     ON
         s.productline = pl.productline
 )
-
 SELECT
     src_productcode,
     productname,
@@ -74,5 +67,6 @@ FROM
 
 {% if is_incremental() %}
 WHERE
-    src_productcode IS NOT NULL  -- Only process new or updated rows
+    src_productcode IS NOT NULL
+    AND (update_timestamp > (SELECT MAX(update_timestamp) FROM {{this}})) -- Incremental filter based on updated rows
 {% endif %}

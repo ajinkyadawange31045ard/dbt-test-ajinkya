@@ -6,3 +6,9 @@ sources:
     tables:
       - name: productlines # Table name in Redshift
       - name: products
+      - name: offices
+      - name: employees
+      - name: customers
+      - name: payments
+      - name: orders
+      - name: orderdetails
