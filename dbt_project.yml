@@ -17,7 +17,7 @@ clean-targets: ["target", "dbt_modules"]
 
 models:
   dbt_test_ajinkya:
-    +schema: devdw  # Forces all models to use the devdw schema
+    # +schema: devdw  # Forces all models to use the devdw schema
     classicmodels:
       +materialized: table  # Example sub-folder settings (if applicable)
 
