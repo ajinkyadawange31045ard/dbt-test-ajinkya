@@ -34,6 +34,6 @@ clean-targets:         # Directories to be removed by `dbt clean`
 
 models:
   dbt-test-ajinkya:
-    codes:  # This should match the subdirectory name under the "models" folder.
+    classicmodels:  # This should match the subdirectory name under the "models" folder.
       +schema: devdw  # Specify the schema where models will be created.
       +materialized: table  # Optional: Set default materialization for this folder.
