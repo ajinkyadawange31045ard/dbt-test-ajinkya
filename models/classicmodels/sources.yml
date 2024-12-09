@@ -5,4 +5,4 @@ sources:
     schema: devstage # Redshift schema name
     tables:
       - name: productlines # Table name in Redshift
-      # - name: products
+      - name: products
