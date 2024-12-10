@@ -18,5 +18,5 @@ clean-targets: ["target", "dbt_modules"]
 models:
   dbt_test_ajinkya:
     classicmodels:
-      materialized: table 
+      +materialized: table 
       
