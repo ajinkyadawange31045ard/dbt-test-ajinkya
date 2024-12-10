@@ -1,3 +1,6 @@
+{{ config(
+    materialized='incremental'
+) }}
 WITH batch_metadata AS (
     SELECT
         etl_batch_no,
