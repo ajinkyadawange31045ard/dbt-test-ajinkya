@@ -1,74 +1,42 @@
 {{ config(
     materialized='incremental',
-    unique_key='src_orderNumber'
+    unique_key='src_ordernumber'
 ) }}
 
--- Fetch the latest batch metadata
-WITH batch_control AS (
-    SELECT 
-        etl_batch_no, 
-        etl_batch_date
-    from etl_metadata.batch_control
-),
-
--- Fetch staging data for orders
-staging_orders AS (
-    SELECT
-        orderNumber AS src_orderNumber,
-        orderDate,
-        requiredDate,
-        shippedDate,
-        status,
-        cancelledDate,
-        customerNumber AS src_customerNumber,
-        create_timestamp AS src_create_timestamp,
-        update_timestamp AS src_update_timestamp
-    FROM {{ source('devstage', 'orders') }}
-),
--- Fetch the corresponding dw_customer_id from the Customers table
-customer_mapping AS (
-    SELECT 
-        src_customerNumber,
-        dw_customer_id
-    FROM {{ ref('customers') }}  -- Referring to the customers model in dbt
-),
--- Determine the current max dw_order_id in the target table
-max_id AS (
-    SELECT 
-        COALESCE(MAX(dw_order_id), 0) AS max_order_id
-    FROM {{ this }}
-),
-
--- Combine staging data with existing target table to identify new and updated records
-final_data AS (
-    SELECT
-        st.src_orderNumber,
-        st.orderDate,
-        st.requiredDate,
-        st.shippedDate,
-        st.status,
-        st.cancelledDate,
-        st.src_customerNumber,
-        st.src_create_timestamp,
-        st.src_update_timestamp,
-        cm.dw_customer_id,
-        '' as comments,
-        CURRENT_TIMESTAMP AS dw_create_timestamp,
-        CURRENT_TIMESTAMP AS dw_update_timestamp,
-        bc.etl_batch_no,
-        bc.etl_batch_date,
-        -- Generate auto-increment dw_order_id for new records
-        ROW_NUMBER() OVER () + (SELECT max_order_id FROM max_id) AS dw_order_id
-    FROM staging_orders AS st
-    CROSS JOIN batch_control AS bc
-    JOIN customer_mapping AS cm
-        ON st.src_customerNumber = cm.src_customerNumber
-    LEFT JOIN {{ this }} AS dw
-        ON st.src_orderNumber = dw.src_orderNumber
-    WHERE dw.src_orderNumber IS NULL
-    OR st.src_update_timestamp > dw.src_update_timestamp
+with ranked_data as (
+    select
+        c.dw_customer_id,
+        sd.ordernumber as src_ordernumber,
+        sd.orderdate,
+        sd.requireddate,
+        sd.shippeddate,
+        sd.status,
+        sd.customernumber as src_customernumber,
+        sd.cancelleddate,
+        sd.create_timestamp as src_create_timestamp,
+        coalesce(sd.update_timestamp, ed.src_update_timestamp) as src_update_timestamp,
+        em.etl_batch_no,
+        em.etl_batch_date,
+        case
+            when ed.src_ordernumber is null then current_timestamp
+            else ed.dw_create_timestamp
+        end as dw_create_timestamp,
+        case
+            when ed.src_ordernumber is not null then current_timestamp
+            else ed.dw_update_timestamp
+        end as dw_update_timestamp,
+        row_number() over (order by sd.ordernumber) + coalesce(max(ed.dw_order_id) over (), 0) as dw_order_id
+    from
+        devstage.orders sd
+    left join devdw.orders ed on sd.ordernumber = ed.src_ordernumber
+    join {{ ref('customers') }} c on sd.customernumber = c.src_customernumber
+    cross join etl_metadata.batch_control em
 )
 
--- Insert or update records in the target table
-SELECT *
-FROM final_data
+select *
+from ranked_data
+
+{% if is_incremental() %}
+where
+    ranked_data.src_ordernumber is not null  -- only process new or updated rows
+{% endif %}

@@ -1,4 +1,3 @@
-
 {{ config(
     materialized='incremental',
     unique_key='src_customernumber'
@@ -24,18 +23,26 @@ with ranked_data as (
         coalesce(sd.update_timestamp, ed.src_update_timestamp) as src_update_timestamp,
         em.etl_batch_no,
         em.etl_batch_date,
-        current_timestamp as dw_update_timestamp,
         case
-            when ed.src_customernumber is  null then current_timestamp
+            when ed.src_customernumber is null then current_timestamp
             else ed.dw_create_timestamp
         end as dw_create_timestamp,
+        case
+            when ed.src_customernumber is not null then current_timestamp
+            else ed.dw_update_timestamp
+        end as dw_update_timestamp,
         row_number() over (order by sd.customernumber) + coalesce(max(ed.dw_customer_id) over (), 0) as dw_customer_id
     from
-        {{source("devstage","customers")}} sd
-    left join {{this}} ed on sd.customernumber = ed.src_customernumber
+        devstage.customers sd
+    left join devdw.customers ed on sd.customernumber = ed.src_customernumber
     left join {{ ref('employees') }} e on sd.salesrepemployeenumber = e.employeenumber
     cross join etl_metadata.batch_control em
 )
 
 select *
 from ranked_data
+
+{% if is_incremental() %}
+WHERE
+    ranked_data.src_customernumber IS NOT NULL  -- Only process new or updated rows
+{% endif %}

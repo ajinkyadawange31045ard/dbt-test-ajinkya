@@ -3,12 +3,11 @@
     unique_key='employeenumber'
 ) }}
 
-with batch_control as (
-    select etl_batch_no, etl_batch_date
-    from etl_metadata.batch_control
-    limit 1
-),
-ranked_data as (
+{% set batch_no = var('batch_no', 1) %}
+{% set batch_date = var('batch_date', '1970-01-01') %}
+
+-- Step 1: Source and existing data
+with source_data as (
     select
         sd.employeenumber,
         sd.lastname,
@@ -20,54 +19,104 @@ ranked_data as (
         sd.jobtitle,
         o.dw_office_id,
         sd.create_timestamp as src_create_timestamp,
-        coalesce(sd.update_timestamp, ed.src_update_timestamp) as src_update_timestamp,
-        bc.etl_batch_no,
-        bc.etl_batch_date,
-        current_timestamp as dw_update_timestamp,
-        case
-            when ed.employeenumber is null then current_timestamp
-            else ed.dw_create_timestamp
-        end as dw_create_timestamp,
-        row_number() over (order by sd.employeenumber) + coalesce(max(ed.dw_employee_id) over (), 0) as dw_employee_id,
-        0 as dw_reporting_employee_id  -- Placeholder for reporting relationship
-    from {{ source('devstage', 'employees') }} sd
-    left join {{ this }} ed on sd.employeenumber = ed.employeenumber
+        sd.update_timestamp as src_update_timestamp,
+        em.etl_batch_no,
+        em.etl_batch_date
+    from devstage.employees sd
     join {{ ref('offices') }} o on sd.officecode = o.officecode
-    cross join batch_control bc
-),
-updated_reporting as (
-    select
-        rd.employeenumber,
-        coalesce(dw2.dw_employee_id, 0) as dw_reporting_employee_id
-    from ranked_data rd
-    left join devdw.employees dw2 on rd.reportsto = dw2.employeenumber
+    cross join etl_metadata.batch_control em 
 ),
 
-final_data as (
+existing_data as (
+    select *
+    from {{ this }}
+),
+
+-- Step 2: Update existing rows
+updates as (
     select
-        rd.employeenumber,
-        rd.lastname,
-        rd.firstname,
-        rd.extension,
-        rd.email,
-        rd.officecode,
-        rd.reportsto,
-        rd.jobtitle,
-        rd.dw_office_id,
-        rd.src_create_timestamp,
-        rd.src_update_timestamp,
-        rd.etl_batch_no,
-        rd.etl_batch_date,
-        rd.dw_create_timestamp,
-        rd.dw_update_timestamp,
-        rd.dw_employee_id,
-        greatest(coalesce(ur.dw_reporting_employee_id, 0), rd.dw_reporting_employee_id) as dw_reporting_employee_id
-    from ranked_data rd
-    left join updated_reporting ur on rd.employeenumber = ur.employeenumber
+        b.employeenumber,
+        s.lastname,
+        s.firstname,
+        s.extension,
+        s.email,
+        s.officecode,
+        s.reportsto,
+        s.jobtitle,
+        s.dw_office_id,
+        b.src_create_timestamp,  -- Preserve original create timestamp
+        s.src_update_timestamp,
+        b.dw_create_timestamp,
+        current_timestamp as dw_update_timestamp,
+        b.dw_employee_id,  -- Preserve existing employee ID
+        b.dw_reporting_employee_id,  -- Preserve existing reporting relationship
+        s.etl_batch_no,
+        s.etl_batch_date
+    from source_data s
+    join existing_data b on s.employeenumber = b.employeenumber
+),
+
+-- Step 3: Insert new rows
+inserts as (
+    select
+        s.employeenumber,
+        s.lastname,
+        s.firstname,
+        s.extension,
+        s.email,
+        s.officecode,
+        s.reportsto,
+        s.jobtitle,
+        s.dw_office_id,
+        s.src_create_timestamp,
+        s.src_update_timestamp,
+        current_timestamp as dw_create_timestamp,
+        current_timestamp as dw_update_timestamp,
+        row_number() over (order by s.employeenumber) + coalesce(max(b.dw_employee_id) over (), 0) as dw_employee_id,
+        cast(null as integer) as dw_reporting_employee_id,  -- Placeholder for reporting relationship
+        s.etl_batch_no,
+        s.etl_batch_date
+    from source_data s
+    left join existing_data b on s.employeenumber = b.employeenumber
+    where b.employeenumber is null
+),
+
+-- Combine updates and inserts
+combined as (
+    select * from updates
+    union all
+    select * from inserts
+),
+
+-- Step 4: Update reporting relationships
+reporting_relationships as (
+    select
+        c.employeenumber,
+        c.lastname,
+        c.firstname,
+        c.extension,
+        c.email,
+        c.officecode,
+        c.reportsto,
+        c.jobtitle,
+        c.dw_office_id,
+        c.src_create_timestamp,
+        c.src_update_timestamp,
+        c.dw_create_timestamp,
+        c.dw_update_timestamp,
+        c.dw_employee_id,
+        coalesce(dw2.dw_employee_id, c.dw_reporting_employee_id) as dw_reporting_employee_id, -- Correct reporting relationship
+        c.etl_batch_no,
+        c.etl_batch_date
+    from combined c
+    left join combined dw2 on c.reportsto = dw2.employeenumber -- Match `reportsto` with `employeenumber`
 )
 
-select * from final_data
+-- Final output
+select *
+from reporting_relationships
 
 {% if is_incremental() %}
-where employeenumber is not null
+where reporting_relationships.employeenumber IS NOT NULL  -- Only process new or updated rows
+
 {% endif %}
