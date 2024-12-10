@@ -1,6 +1,6 @@
 {{ config(
     materialized='incremental',
-    unique='src_productcode'
+    unique_key='src_productcode'
 ) }}
 
 WITH batch_metadata AS (
