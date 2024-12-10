@@ -1,8 +1,3 @@
-{{ config(
-    materialized='incremental'
-) }}
-
-
 WITH source_data AS (
     SELECT
         st.officeCode,
