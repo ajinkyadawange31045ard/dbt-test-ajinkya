@@ -15,16 +15,16 @@ with ranked_data as (
         sd.postalcode,
         sd.territory,
         sd.create_timestamp as src_create_timestamp,
-        coalesce(sd.update_timestamp, ed.src_update_timestamp) as src_update_timestamp,
+        coalesce(sd.update_timestamp, ed.update_timestamp) as src_update_timestamp, -- Adjusted this line
         em.etl_batch_no,
         em.etl_batch_date,
         case
             when ed.officecode is null then current_timestamp
-            else ed.dw_create_timestamp
+            else ed.create_timestamp
         end as dw_create_timestamp,
         case
             when ed.officecode is not null then current_timestamp
-            else ed.dw_create_timestamp
+            else ed.create_timestamp
         end as dw_update_timestamp,
         row_number() over (order by sd.officecode) + coalesce(max(ed.dw_office_id) over (), 0) as dw_office_id
     from
