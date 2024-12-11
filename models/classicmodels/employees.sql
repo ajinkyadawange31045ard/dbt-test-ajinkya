@@ -3,6 +3,8 @@
     unique_key='employeenumber'
 ) }}
 
+
+
 with batch_control as (
     select etl_batch_no, etl_batch_date
     from etl_metadata.batch_control

@@ -12,3 +12,9 @@ sources:
       - name: payments
       - name: orders
       - name: orderdetails
+      - name: customer_history
+      - name: product_history
+      - name: daily_customer_summary
+      - name: daily_product_summary
+      - name: monthly_customer_summary
+      - name: monthly_product_summary
