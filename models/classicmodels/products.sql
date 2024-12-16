@@ -14,6 +14,7 @@ WITH batch_metadata AS (
 merged_data AS (
     SELECT
         s.productcode AS src_productcode,
+        e.dw_product_id,
         s.productname,
         s.productline,
         s.productscale,
@@ -44,8 +45,9 @@ merged_data AS (
         {{ref('productlines')}} pl
     ON
         s.productline = pl.productline
-)
-
+),
+max_dw_id as
+(select max(dw_product_id) as mid from {{this}})
 SELECT
     src_productcode,
     productname,
@@ -69,10 +71,10 @@ SELECT
         WHEN src_productcode IS NOT NULL THEN CURRENT_TIMESTAMP
         ELSE existing_dw_update_timestamp
     END AS dw_update_timestamp,
-    ROW_NUMBER() OVER (ORDER BY src_productcode) + COALESCE(MAX(existing_dw_product_id) OVER (), 0) AS dw_product_id
+    coalesce(dw_product_id,ROW_NUMBER() OVER (ORDER BY src_productcode) + COALESCE(max_dw_id.mid, 0)) AS dw_product_id
 FROM
     merged_data
-
+    cross join max_dw_id
 {% if is_incremental() %}
 WHERE
     src_productcode IS NOT NULL  -- Only process new or updated rows

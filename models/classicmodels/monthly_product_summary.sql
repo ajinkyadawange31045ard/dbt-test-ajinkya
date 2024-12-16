@@ -1,6 +1,10 @@
 -- models/monthly_product_summary.sql
 
-{{ config(materialized='incremental') }}
+-- models/monthly_product_summary.sql
+
+{{ config(materialized='incremental',
+    unique_key=['dw_product_id', 'start_of_the_month_date'])
+ }}
 
 WITH batch_control AS (
     SELECT 
@@ -111,3 +115,4 @@ SELECT
     etl_batch_no,
     etl_batch_date
 FROM new_records
+
